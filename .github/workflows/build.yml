@@ -44,6 +44,18 @@ jobs:
           xcrun --sdk iphoneos --show-sdk-version
           python3 --version
 
+      - name: 取小米13设备树
+        run: |
+          set -e
+          DST=work/uefi-fuxi/Resources/DTBs/fuxi.dtb
+          mkdir -p "$(dirname "$DST")"
+          curl -fsSL --retry 3 -o "$DST" \
+            https://raw.githubusercontent.com/ljhhkx529/uefi-fuxi/fuxi/Resources/DTBs/fuxi.dtb
+          ACTUAL=$(shasum -a 256 "$DST" | cut -d' ' -f1)
+          WANT=0590a46ca03be8de4cdf273f4ba4bc884e41555e771f55d2601ba9df121b5d5c
+          echo "dtb sha256=$ACTUAL size=$(wc -c < "$DST")"
+          [ "$ACTUAL" = "$WANT" ] || { echo "设备树哈希与固定值不符"; exit 1; }
+
       - name: 选择设备配置
         working-directory: work/UniXNU
         run: ./unixnu defconfig fuxi_defconfig -D ../unixnu-fuxi
