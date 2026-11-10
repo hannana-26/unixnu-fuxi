@@ -94,8 +94,12 @@ jobs:
           for line in text.splitlines():
               stripped = line.strip().strip('",')
               token = stripped.split(' ')[0] if stripped else ''
+              whole = line.lower()
+              if token.endswith('.py') and any(m in whole for m in markers):
+                  dropped.append(token)
+                  continue
               if token.endswith('.py') and (scripts / token).is_file():
-                  body = (scripts / token).read_text(errors='replace')
+                  body = (scripts / token).read_text(errors='replace').lower()
                   if any(m in body for m in markers):
                       dropped.append(token)
                       continue
