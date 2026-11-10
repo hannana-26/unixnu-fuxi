@@ -12,6 +12,9 @@ jobs:
   build:
     runs-on: macos-latest
     timeout-minutes: 300
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: 取设备仓库
         uses: actions/checkout@v4
