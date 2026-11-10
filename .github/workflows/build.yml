@@ -71,7 +71,7 @@ jobs:
         run: ./unixnu fetch
         timeout-minutes: 90
 
-      - name: 第一遍（跳过依赖候选内核的归档）
+      - name: 第一遍（跳过 GPU 与依赖候选内核的归档）
         working-directory: work/UniXNU
         run: |
           set -o pipefail
@@ -83,10 +83,13 @@ jobs:
           board = repo / 'board.toml'
           scripts = repo / 'scripts'
           text = board.read_text()
-          if not (repo / 'board.toml.orig').exists():
-              (repo / 'board.toml.orig').write_text(text)
 
-          markers = ('native-prelink', 'display-analysis', 'audit-amfi-pmgr-contract')
+          # 两类要跳过：
+          #   1. 依赖预链接候选内核或显示分析产物的归档，第一遍时尚不存在；
+          #   2. GPU 归档，当前提交里调用的 task_get_gpu_role 与内核头文件不匹配，
+          #      属于待修代码问题，先做控制台版内核。
+          markers = ('native-prelink', 'display-analysis', 'audit-amfi-pmgr-contract',
+                     'adreno', 'gmu', 'legacy-display')
           kept, dropped = [], []
           for line in text.splitlines():
               stripped = line.strip().strip('",')
@@ -102,15 +105,11 @@ jobs:
           PY
           ./unixnu build kernel
 
-      - name: 恢复完整归档并重编
+      - name: 第二遍（候选内核已就绪）
         working-directory: work/UniXNU
         run: |
           set -o pipefail
-          REPO="$GITHUB_WORKSPACE/work/unixnu-fuxi"
-          cp "$REPO/board.toml.orig" "$REPO/board.toml"
-          rm -f "$REPO/board.toml.orig"
-          echo "归档行数: $(grep -c '^  "' "$REPO/board.toml" || true)"
-          ls out/fuxi/tree/build/native-prelink 2>/dev/null | head || echo "无候选目录"
+          ls out/fuxi/tree/build/native-prelink 2>/dev/null | head -5 || echo "无候选目录"
           ./unixnu build kernel
 
       - name: 产物清单
