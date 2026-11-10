@@ -1,0 +1,78 @@
+name: build
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "kernel 或 firmware"
+        required: false
+        default: kernel
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 240
+    steps:
+      - name: 取设备仓库
+        uses: actions/checkout@v4
+        with:
+          path: work/unixnu-fuxi
+          submodules: recursive
+
+      - name: 取 UniXNU 主仓库
+        uses: actions/checkout@v4
+        with:
+          repository: OddlyLabs/UniXNU
+          ref: fuxi
+          path: work/UniXNU
+          submodules: recursive
+
+      - name: 取 UEFI 固件仓库
+        uses: actions/checkout@v4
+        with:
+          repository: OddlyLabs/uefi-fuxi
+          ref: fuxi
+          path: work/uefi-fuxi
+          submodules: recursive
+
+      - name: 环境信息
+        run: |
+          set -x
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          python3 --version
+          sw_vers
+
+      - name: 选择设备配置
+        working-directory: work/UniXNU
+        run: ./unixnu defconfig fuxi_defconfig -D ../unixnu-fuxi
+
+      - name: 解析状态
+        working-directory: work/UniXNU
+        run: ./unixnu status --json || true
+
+      - name: 拉取源码与子模块
+        working-directory: work/UniXNU
+        run: ./unixnu fetch
+        timeout-minutes: 90
+
+      - name: 构建
+        working-directory: work/UniXNU
+        run: ./unixnu build ${{ inputs.target || 'kernel' }}
+
+      - name: 产物清单
+        if: always()
+        run: |
+          find work/UniXNU/out -maxdepth 6 -type f \( -name '*.macho' -o -name '*.json' -o -name '*.log' -o -name '*.fd' \) -printf '%10s  %p\n' 2>/dev/null | sort -k2 | tail -60 || true
+
+      - name: 上传产物
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          retention-days: 7
+          path: |
+            work/UniXNU/out/**/kernel/**
+            work/UniXNU/out/**/logs/**
+            work/UniXNU/out/state.json
+          if-no-files-found: warn
