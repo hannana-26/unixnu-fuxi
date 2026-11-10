@@ -7,16 +7,11 @@ on:
         description: "kernel 或 firmware"
         required: false
         default: kernel
-      firstpass:
-        description: "第一遍：跳过需要候选内核的归档"
-        type: boolean
-        required: false
-        default: false
 
 jobs:
   build:
     runs-on: macos-latest
-    timeout-minutes: 240
+    timeout-minutes: 300
     steps:
       - name: 取设备仓库
         uses: actions/checkout@v4
@@ -46,40 +41,61 @@ jobs:
           xcrun --sdk iphoneos --show-sdk-version
           python3 --version
 
-      - name: 第一遍跳过依赖候选的归档
-        if: inputs.firstpass
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('work/unixnu-fuxi/board.toml')
-          lines = p.read_text().splitlines()
-          keep = [l for l in lines if 'build-sheng-platform-power.py' not in l]
-          p.write_text("\n".join(keep) + "\n")
-          print(f'移除 {len(lines) - len(keep)} 行')
-          PY
-          grep -n "build-sheng-platform-power" work/unixnu-fuxi/board.toml || echo "已无该归档"
-
       - name: 选择设备配置
         working-directory: work/UniXNU
         run: ./unixnu defconfig fuxi_defconfig -D ../unixnu-fuxi
-
-      - name: 解析状态
-        working-directory: work/UniXNU
-        run: ./unixnu status --json || true
 
       - name: 拉取源码与子模块
         working-directory: work/UniXNU
         run: ./unixnu fetch
         timeout-minutes: 90
 
-      - name: 构建
+      - name: 第一遍（跳过依赖候选内核的归档）
         working-directory: work/UniXNU
-        run: ./unixnu build ${{ inputs.target || 'kernel' }}
+        run: |
+          set -o pipefail
+          python3 - "$GITHUB_WORKSPACE/work/unixnu-fuxi" <<'PY'
+          import sys
+          from pathlib import Path
+
+          repo = Path(sys.argv[1])
+          board = repo / 'board.toml'
+          scripts = repo / 'scripts'
+          text = board.read_text()
+          if not (repo / 'board.toml.orig').exists():
+              (repo / 'board.toml.orig').write_text(text)
+
+          markers = ('native-prelink', 'display-analysis', 'audit-amfi-pmgr-contract')
+          kept, dropped = [], []
+          for line in text.splitlines():
+              stripped = line.strip().strip('",')
+              token = stripped.split(' ')[0] if stripped else ''
+              if token.endswith('.py') and (scripts / token).is_file():
+                  body = (scripts / token).read_text(errors='replace')
+                  if any(m in body for m in markers):
+                      dropped.append(token)
+                      continue
+              kept.append(line)
+          board.write_text('\n'.join(kept) + '\n')
+          print('跳过:', dropped or '无')
+          PY
+          ./unixnu build kernel
+
+      - name: 恢复完整归档并重编
+        working-directory: work/UniXNU
+        run: |
+          set -o pipefail
+          REPO="$GITHUB_WORKSPACE/work/unixnu-fuxi"
+          cp "$REPO/board.toml.orig" "$REPO/board.toml"
+          rm -f "$REPO/board.toml.orig"
+          echo "归档行数: $(grep -c '^  "' "$REPO/board.toml" || true)"
+          ls out/fuxi/tree/build/native-prelink 2>/dev/null | head || echo "无候选目录"
+          ./unixnu build kernel
 
       - name: 产物清单
         if: always()
         run: |
-          find work/UniXNU/out -type f \( -name '*.macho' -o -name '*.json' -o -name '*.log' \) -exec ls -l {} \; 2>/dev/null | awk '{print $5"  "$9}' | sort -k2 | tail -80 || true
+          find work/UniXNU/out -type f \( -name '*.macho' -o -name '*.json' -o -name '*.log' \) -exec ls -l {} \; 2>/dev/null | awk '{print $5"  "$9}' | sort -k2 | tail -100 || true
 
       - name: 上传产物
         if: always()
