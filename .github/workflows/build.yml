@@ -38,6 +38,12 @@ jobs:
           path: work/uefi-fuxi
           submodules: recursive
 
+      - name: 安装构建工具
+        run: |
+          command -v fdtget >/dev/null || brew install dtc
+          command -v mcopy >/dev/null || brew install mtools
+          fdtget --help 2>&1 | head -1 || true
+
       - name: 环境信息
         run: |
           xcodebuild -version
