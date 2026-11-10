@@ -7,6 +7,11 @@ on:
         description: "kernel 或 firmware"
         required: false
         default: kernel
+      firstpass:
+        description: "第一遍：跳过需要候选内核的归档"
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   build:
@@ -37,11 +42,22 @@ jobs:
 
       - name: 环境信息
         run: |
-          set -x
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
           python3 --version
-          sw_vers
+
+      - name: 第一遍跳过依赖候选的归档
+        if: inputs.firstpass
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('work/unixnu-fuxi/board.toml')
+          lines = p.read_text().splitlines()
+          keep = [l for l in lines if 'build-sheng-platform-power.py' not in l]
+          p.write_text("\n".join(keep) + "\n")
+          print(f'移除 {len(lines) - len(keep)} 行')
+          PY
+          grep -n "build-sheng-platform-power" work/unixnu-fuxi/board.toml || echo "已无该归档"
 
       - name: 选择设备配置
         working-directory: work/UniXNU
@@ -63,7 +79,7 @@ jobs:
       - name: 产物清单
         if: always()
         run: |
-          find work/UniXNU/out -maxdepth 6 -type f \( -name '*.macho' -o -name '*.json' -o -name '*.log' -o -name '*.fd' \) -printf '%10s  %p\n' 2>/dev/null | sort -k2 | tail -60 || true
+          find work/UniXNU/out -type f \( -name '*.macho' -o -name '*.json' -o -name '*.log' \) -exec ls -l {} \; 2>/dev/null | awk '{print $5"  "$9}' | sort -k2 | tail -80 || true
 
       - name: 上传产物
         if: always()
@@ -74,5 +90,6 @@ jobs:
           path: |
             work/UniXNU/out/**/kernel/**
             work/UniXNU/out/**/logs/**
+            work/UniXNU/out/**/build/native-prelink/**
             work/UniXNU/out/state.json
           if-no-files-found: warn
